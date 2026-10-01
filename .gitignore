@@ -1,0 +1,20 @@
+# Go
+marketlab
+marketlab.exe
+*.test
+coverage.out
+
+# Frontend
+web/node_modules/
+web/dist/
+playwright-report/
+test-results/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local recordings
+recordings/
