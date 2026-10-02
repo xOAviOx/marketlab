@@ -1,8 +1,10 @@
 # Go
-marketlab
-marketlab.exe
+/marketlab
+/marketlab.exe
+/dist/
 *.test
 coverage.out
+/.cache/
 
 # Frontend
 web/node_modules/

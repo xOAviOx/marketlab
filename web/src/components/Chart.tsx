@@ -1,28 +1,40 @@
+import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, HistogramSeries, type IChartApi, type ISeriesApi, type Time } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
-import { CandlestickSeries, ColorType, createChart, HistogramSeries, type Time } from 'lightweight-charts'
-import type { Candle } from '../types'
+import type { Candle, ScenarioEvent } from '../types'
 
-export function MarketChart({ data }: { data: Candle[] }) {
-  const host = useRef<HTMLDivElement>(null)
+const baseTime = 1_735_689_600
+
+export function MarketChart({ candles, events }: { candles: Candle[]; events: ScenarioEvent[] }) {
+  const container = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi>()
+  const seriesRef = useRef<ISeriesApi<'Candlestick'>>()
+  const volumeRef = useRef<ISeriesApi<'Histogram'>>()
+
   useEffect(() => {
-    if (!host.current) return
-    const chart = createChart(host.current, {
+    if (!container.current) return
+    const chart = createChart(container.current, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#0e1116' }, textColor: '#77808d', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10 },
-      grid: { vertLines: { color: '#181d24' }, horzLines: { color: '#181d24' } },
-      rightPriceScale: { borderColor: '#252b35', scaleMargins: { top: .08, bottom: .24 } },
-      timeScale: { borderColor: '#252b35', timeVisible: true, secondsVisible: false, rightOffset: 3 },
-      crosshair: { vertLine: { color: '#59616c', labelBackgroundColor: '#333a44' }, horzLine: { color: '#59616c', labelBackgroundColor: '#333a44' } },
-      handleScroll: true,
-      handleScale: true,
+      layout: { background: { type: ColorType.Solid, color: '#111416' }, textColor: '#8d979d', fontFamily: 'Inter, ui-sans-serif, system-ui' },
+      grid: { vertLines: { color: '#1c2226' }, horzLines: { color: '#1c2226' } },
+      rightPriceScale: { borderColor: '#293035' }, timeScale: { borderColor: '#293035', timeVisible: true, secondsVisible: true },
+      crosshair: { vertLine: { color: '#64748b' }, horzLine: { color: '#64748b' } },
     })
-    const candleSeries = chart.addSeries(CandlestickSeries, { upColor: '#b6f34b', downColor: '#ff6b5e', wickUpColor: '#b6f34b', wickDownColor: '#ff6b5e', borderVisible: false })
-    candleSeries.setData(data.map(c => ({ ...c, time: c.time as Time })))
-    const volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'volume' })
+    const series = chart.addSeries(CandlestickSeries, { upColor: '#2dd4bf', downColor: '#fb7185', borderVisible: false, wickUpColor: '#2dd4bf', wickDownColor: '#fb7185', priceFormat: { type: 'price', precision: 2, minMove: .01 } })
+    const volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', color: '#334155' })
     volume.priceScale().applyOptions({ scaleMargins: { top: .82, bottom: 0 } })
-    volume.setData(data.map(c => ({ time: c.time as Time, value: c.volume, color: c.close >= c.open ? '#b6f34b38' : '#ff6b5e38' })))
-    chart.timeScale().fitContent()
-    return () => chart.remove()
-  }, [data])
-  return <div className="chart-wrap"><div ref={host} className="chart" aria-label="Candlestick and volume chart" /><span className="chart-watermark">MARKETLAB · 1m</span></div>
+    chartRef.current = chart; seriesRef.current = series; volumeRef.current = volume
+    return () => { chart.remove(); chartRef.current = undefined }
+  }, [])
+
+  useEffect(() => {
+    const points = candles.map(c => ({ time: (baseTime + Math.floor(c.time / 1000)) as Time, open: c.open / 100, high: c.high / 100, low: c.low / 100, close: c.close / 100 }))
+    seriesRef.current?.setData(points)
+    volumeRef.current?.setData(candles.map(c => ({ time: (baseTime + Math.floor(c.time / 1000)) as Time, value: c.volume, color: c.close >= c.open ? '#2dd4bf35' : '#fb718535' })))
+    if (seriesRef.current && points.length) {
+      createSeriesMarkers(seriesRef.current, events.map(event => ({ time: (baseTime + Math.floor(event.logicalTime / 5000) * 5) as Time, position: 'aboveBar' as const, color: '#fbbf24', shape: 'circle' as const, text: event.title })))
+      chartRef.current?.timeScale().fitContent()
+    }
+  }, [candles, events])
+
+  return <div className="chart" ref={container} aria-label="NOVA candlestick and volume chart" />
 }

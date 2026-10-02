@@ -1,73 +1,49 @@
-export type Side = 'buy' | 'sell'
-export type OrderType = 'market' | 'limit'
-export type TimeInForce = 'GTC' | 'IOC' | 'FOK'
+export type Side = 'BUY' | 'SELL'
+export type OrderType = 'LIMIT' | 'MARKET'
 export type ConnectionState = 'loading' | 'connected' | 'reconnecting' | 'disconnected'
-export type SimulationState = 'running' | 'paused' | 'complete'
 
-export interface Instrument {
-  symbol: string
-  name: string
-  price: number
-  change: number
-  changePercent: number
-  bid: number
-  ask: number
-  volume: number
-}
+export interface Level { price: number; quantity: number; orders: number }
+export interface Trade { id: number; buyOrderId: number; sellOrderId: number; buyer: string; seller: string; price: number; quantity: number; aggressorSide: Side; sequence: number }
+export interface Order { id: number; participant: string; side: Side; type: OrderType; price: number; quantity: number; filled: number; remaining: number; status: 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED'; sequence: number }
+export interface Candle { time: number; open: number; high: number; low: number; close: number; volume: number }
+export interface Market { lastPrice: number; referencePrice: number; runChange: number; bestBid: number; bestAsk: number; spread: number; volume: number; markSource: string }
+export interface Account { participant: string; cashAvailable: number; cashReserved: number; sharesAvailable: number; sharesReserved: number; equity: number; pnl: number; openOrders: Order[]; tradeHistory: Trade[] }
+export interface Bot { id: string; strategy: string; status: string; lastAction: string; inventory: number; cash: number; equity: number; pnl: number; params: StrategyParams }
+export interface StrategyParams { enabled: boolean; spread?: number; size: number; interval: number; lookback?: number; threshold?: number; riskLimit?: number }
+export interface ScenarioEvent { sequence: number; logicalTime: number; type: string; title: string; explanation: string; orderIds?: number[]; tradeIds?: number[] }
+export interface Recording { eventCount: number; replayIndex: number; maxEvents: number; atEnd: boolean }
 
-export interface Candle {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-export interface BookLevel { price: number; size: number; orders: number }
-export interface Trade { id: string; time: string; price: number; size: number; side: Side; venue: string }
-export interface Position { symbol: string; quantity: number; averagePrice: number; markPrice: number; unrealizedPnl: number; realizedPnl: number }
-export interface Order { id: string; time: string; symbol: string; side: Side; type: OrderType; quantity: number; filled: number; price?: number; status: 'open' | 'filled' | 'cancelled' | 'rejected'; rejectReason?: string }
-export interface Portfolio { cash: number; equity: number; buyingPower: number; dayPnl: number; totalPnl: number; positions: Position[] }
-export interface BotActivity { id: string; time: string; bot: string; action: string; detail: string; tone: 'neutral' | 'positive' | 'negative' }
-export interface ScenarioEvent { id: string; time: number; kind: 'news' | 'liquidity' | 'volatility' | 'halt'; title: string; description: string; impact: string; triggered: boolean }
-export interface Scenario { id: string; name: string; description: string; difficulty: 'intro' | 'intermediate' | 'advanced'; durationSeconds: number; tags: string[] }
-
-export interface SessionSnapshot {
-  version: 1
+export interface Snapshot {
   sessionId: string
-  sequence: number
-  serverTime: string
-  simulation: { state: SimulationState; speed: number; elapsed: number; duration: number; scenarioId: string }
-  instruments: Instrument[]
-  activeSymbol: string
-  candles: Record<string, Candle[]>
-  orderBook: { bids: BookLevel[]; asks: BookLevel[] }
+  seq: number
+  mode: 'LIVE' | 'REPLAY'
+  running: boolean
+  speed: number
+  logicalTime: number
+  seed: number
+  symbol: string
+  market: Market
+  book: { bids: Level[]; asks: Level[] }
   trades: Trade[]
-  portfolio: Portfolio
-  openOrders: Order[]
-  orderHistory: Order[]
-  botActivity: BotActivity[]
-  scenarios: Scenario[]
+  candles: Candle[]
+  account: Account
+  bots: Bot[]
   events: ScenarioEvent[]
+  recording: Recording
+  strategies: Record<string, StrategyParams>
+  message?: string
 }
 
-export type SessionCommand =
-  | { type: 'simulation.pause' }
-  | { type: 'simulation.resume' }
-  | { type: 'simulation.restart' }
-  | { type: 'simulation.seek'; elapsed: number }
+export type Command =
+  | { type: 'simulation.start' | 'simulation.resume' | 'simulation.pause' | 'simulation.step' }
+  | { type: 'simulation.restart'; seed?: number }
   | { type: 'simulation.speed'; speed: number }
-  | { type: 'instrument.select'; symbol: string }
-  | { type: 'order.place'; symbol: string; side: Side; orderType: OrderType; quantity: number; price?: number; timeInForce: TimeInForce }
-  | { type: 'order.cancel'; orderId: string }
+  | { type: 'order.place'; side: Side; orderType: OrderType; quantity: number; price?: number }
+  | { type: 'order.cancel'; orderId: number }
   | { type: 'scenario.load'; scenarioId: string }
+  | { type: 'replay.enter' | 'replay.step' | 'replay.play' | 'replay.pause' }
+  | { type: 'replay.seek'; index: number }
+  | { type: 'strategy.update'; strategy: string; enabled: boolean; params?: StrategyParams }
 
-export type ServerMessage =
-  | { type: 'snapshot'; snapshot: SessionSnapshot }
-  | { type: 'patch'; sequence: number; snapshot: SessionSnapshot }
-  | { type: 'command.accepted'; requestId: string }
-  | { type: 'command.rejected'; requestId: string; reason: string }
-  | { type: 'pong'; serverTime: string }
-
-export interface CommandResponse { accepted: boolean; requestId: string; snapshot?: SessionSnapshot; reason?: string }
+export interface CommandResponse { accepted: boolean; reason?: string; snapshot: Snapshot }
+export type ServerMessage = { type: 'snapshot'; snapshot: Snapshot }

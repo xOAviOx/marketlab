@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,11 +15,11 @@ import (
 )
 
 const (
-	FormatVersion   = 1
-	EngineVersion   = "1.0.0"
-	InitialPrice    = int64(10_000)
-	MaxEvents       = 50_000
-	MaxImportBytes  = 5 << 20
+	FormatVersion    = 1
+	EngineVersion    = "1.0.0"
+	InitialPrice     = int64(10_000)
+	MaxEvents        = 50_000
+	MaxImportBytes   = 5 << 20
 	HumanParticipant = "you"
 )
 
@@ -32,28 +34,35 @@ func DefaultConfig() Config {
 }
 
 type RecordedEvent struct {
-	Sequence    uint64                `json:"sequence"`
-	LogicalTime int64                 `json:"logicalTime"`
-	Kind        string                `json:"kind"`
-	Origin      string                `json:"origin"`
-	Reason      string                `json:"reason,omitempty"`
-	Request     *engine.SubmitRequest `json:"request,omitempty"`
-	OrderID     uint64                `json:"orderId,omitempty"`
-	Participant string                `json:"participant,omitempty"`
-	Scenario    string                `json:"scenario,omitempty"`
-	Duration    int64                 `json:"duration,omitempty"`
-	OrderIDs    []uint64              `json:"orderIds,omitempty"`
-	TradeIDs    []uint64              `json:"tradeIds,omitempty"`
-	Error       string                `json:"error,omitempty"`
+	Sequence        uint64                   `json:"sequence"`
+	LogicalTime     int64                    `json:"logicalTime"`
+	Kind            string                   `json:"kind"`
+	Origin          string                   `json:"origin"`
+	Reason          string                   `json:"reason,omitempty"`
+	ReasonFacts     map[string]int64         `json:"reasonFacts,omitempty"`
+	Request         *engine.SubmitRequest    `json:"request,omitempty"`
+	OrderID         uint64                   `json:"orderId,omitempty"`
+	Participant     string                   `json:"participant,omitempty"`
+	Scenario        string                   `json:"scenario,omitempty"`
+	Duration        int64                    `json:"duration,omitempty"`
+	OrderIDs        []uint64                 `json:"orderIds,omitempty"`
+	TradeIDs        []uint64                 `json:"tradeIds,omitempty"`
+	StrategyChanges []RecordedStrategyChange `json:"strategyChanges,omitempty"`
+	Error           string                   `json:"error,omitempty"`
+}
+
+type RecordedStrategyChange struct {
+	BotID  string         `json:"botId"`
+	Params StrategyParams `json:"params"`
 }
 
 type Experiment struct {
-	FormatVersion int                  `json:"formatVersion"`
-	EngineVersion string               `json:"engineVersion"`
-	Seed          int64                `json:"seed"`
-	Config        Config               `json:"config"`
-	Endowments    []engine.Endowment   `json:"endowments"`
-	Events        []RecordedEvent      `json:"events"`
+	FormatVersion int                `json:"formatVersion"`
+	EngineVersion string             `json:"engineVersion"`
+	Seed          int64              `json:"seed"`
+	Config        Config             `json:"config"`
+	Endowments    []engine.Endowment `json:"endowments"`
+	Events        []RecordedEvent    `json:"events"`
 }
 
 type StrategyParams struct {
@@ -67,17 +76,17 @@ type StrategyParams struct {
 }
 
 type Bot struct {
-	ID          string         `json:"id"`
-	Strategy    string         `json:"strategy"`
-	Status      string         `json:"status"`
-	LastAction  string         `json:"lastAction"`
-	Inventory   int64          `json:"inventory"`
-	Cash        int64          `json:"cash"`
-	Equity      int64          `json:"equity"`
-	PnL         int64          `json:"pnl"`
-	NextRun     int64          `json:"-"`
-	Bias        int64          `json:"-"`
-	Params      StrategyParams `json:"params"`
+	ID         string         `json:"id"`
+	Strategy   string         `json:"strategy"`
+	Status     string         `json:"status"`
+	LastAction string         `json:"lastAction"`
+	Inventory  int64          `json:"inventory"`
+	Cash       int64          `json:"cash"`
+	Equity     int64          `json:"equity"`
+	PnL        int64          `json:"pnl"`
+	NextRun    int64          `json:"-"`
+	Bias       int64          `json:"-"`
+	Params     StrategyParams `json:"params"`
 }
 
 type ScenarioMarker struct {
@@ -105,76 +114,79 @@ type Scheduled struct {
 }
 
 type MarketView struct {
-	LastPrice     int64 `json:"lastPrice"`
-	ReferencePrice int64 `json:"referencePrice"`
-	RunChange     int64 `json:"runChange"`
-	BestBid       int64 `json:"bestBid"`
-	BestAsk       int64 `json:"bestAsk"`
-	Spread        int64 `json:"spread"`
-	Volume        int64 `json:"volume"`
-	MarkSource    string `json:"markSource"`
+	LastPrice      int64  `json:"lastPrice"`
+	ReferencePrice int64  `json:"referencePrice"`
+	RunChange      int64  `json:"runChange"`
+	BestBid        int64  `json:"bestBid"`
+	BestAsk        int64  `json:"bestAsk"`
+	Spread         int64  `json:"spread"`
+	Volume         int64  `json:"volume"`
+	MarkSource     string `json:"markSource"`
 }
 
 type AccountView struct {
 	engine.Account
-	Equity      int64          `json:"equity"`
-	PnL         int64          `json:"pnl"`
-	OpenOrders  []engine.Order `json:"openOrders"`
+	Equity       int64          `json:"equity"`
+	PnL          int64          `json:"pnl"`
+	OpenOrders   []engine.Order `json:"openOrders"`
 	TradeHistory []engine.Trade `json:"tradeHistory"`
 }
 
 type RecordingView struct {
-	EventCount int `json:"eventCount"`
-	ReplayIndex int `json:"replayIndex"`
-	MaxEvents int `json:"maxEvents"`
-	AtEnd bool `json:"atEnd"`
+	EventCount  int  `json:"eventCount"`
+	ReplayIndex int  `json:"replayIndex"`
+	MaxEvents   int  `json:"maxEvents"`
+	AtEnd       bool `json:"atEnd"`
 }
 
 type Snapshot struct {
-	SessionID  string           `json:"sessionId"`
-	Seq        uint64           `json:"seq"`
-	Mode       string           `json:"mode"`
-	Running    bool             `json:"running"`
-	Speed      float64          `json:"speed"`
-	LogicalTime int64           `json:"logicalTime"`
-	Seed       int64            `json:"seed"`
-	Symbol     string           `json:"symbol"`
-	Market     MarketView       `json:"market"`
-	Book       struct{ Bids, Asks []engine.Level } `json:"book"`
-	Trades     []engine.Trade   `json:"trades"`
-	Candles    []Candle         `json:"candles"`
-	Account    AccountView      `json:"account"`
-	Bots       []Bot            `json:"bots"`
-	Events     []ScenarioMarker `json:"events"`
-	Recording  RecordingView    `json:"recording"`
-	Strategies map[string]StrategyParams `json:"strategies"`
-	Message    string           `json:"message,omitempty"`
+	SessionID   string                              `json:"sessionId"`
+	Seq         uint64                              `json:"seq"`
+	Mode        string                              `json:"mode"`
+	Running     bool                                `json:"running"`
+	Speed       float64                             `json:"speed"`
+	LogicalTime int64                               `json:"logicalTime"`
+	Seed        int64                               `json:"seed"`
+	Symbol      string                              `json:"symbol"`
+	Market      MarketView                          `json:"market"`
+	Book        struct{ Bids, Asks []engine.Level } `json:"book"`
+	Trades      []engine.Trade                      `json:"trades"`
+	Candles     []Candle                            `json:"candles"`
+	Accounts    []engine.Account                    `json:"accounts"`
+	Orders      []engine.Order                      `json:"orders"`
+	Account     AccountView                         `json:"account"`
+	Bots        []Bot                               `json:"bots"`
+	Events      []ScenarioMarker                    `json:"events"`
+	Recording   RecordingView                       `json:"recording"`
+	Strategies  map[string]StrategyParams           `json:"strategies"`
+	Config      Config                              `json:"config"`
+	Message     string                              `json:"message,omitempty"`
 }
 
 type Simulation struct {
-	ID            string
-	Seed          int64
-	Config        Config
-	Endowments    []engine.Endowment
-	Engine        *engine.Engine
-	RNG           *rand.Rand
-	LogicalTime   int64
-	Running       bool
-	Speed         float64
-	Mode          string
-	EventSeq      uint64
-	Events        []RecordedEvent
-	ReplaySource  []RecordedEvent
-	ReplayIndex   int
-	Bots          []Bot
-	Markers       []ScenarioMarker
-	Candles       []Candle
+	ID              string
+	Seed            int64
+	Config          Config
+	Endowments      []engine.Endowment
+	Engine          *engine.Engine
+	RNG             *rand.Rand
+	LogicalTime     int64
+	Running         bool
+	Speed           float64
+	Mode            string
+	EventSeq        uint64
+	Events          []RecordedEvent
+	ReplaySource    []RecordedEvent
+	ReplayIndex     int
+	Bots            []Bot
+	Markers         []ScenarioMarker
+	Candles         []Candle
 	ProcessedTrades int
-	FairShift     int64
-	StressUntil   int64
-	DroughtUntil  int64
-	Scheduled     []Scheduled
-	Message       string
+	FairShift       int64
+	StressUntil     int64
+	DroughtUntil    int64
+	Scheduled       []Scheduled
+	Message         string
 }
 
 func defaultEndowments() []engine.Endowment {
@@ -236,9 +248,13 @@ func (s *Simulation) record(event RecordedEvent) {
 }
 
 func (s *Simulation) submit(origin, reason string, req engine.SubmitRequest) (engine.Result, error) {
+	return s.submitWithFacts(origin, reason, nil, req)
+}
+
+func (s *Simulation) submitWithFacts(origin, reason string, facts map[string]int64, req engine.SubmitRequest) (engine.Result, error) {
 	before := len(s.Engine.Snapshot().Trades)
 	result, err := s.Engine.Submit(req)
-	event := RecordedEvent{Kind: "ORDER", Origin: origin, Reason: reason, Request: &req, Participant: req.Participant}
+	event := RecordedEvent{Kind: "ORDER", Origin: origin, Reason: reason, ReasonFacts: facts, Request: &req, Participant: req.Participant}
 	if err != nil {
 		event.Error = err.Error()
 	} else {
@@ -321,8 +337,9 @@ func (s *Simulation) runMarketMaker(bot *Bot) {
 	if s.LogicalTime < s.StressUntil {
 		size = max(5, size/3)
 	}
-	_, bidErr := s.submit("BOT", fmt.Sprintf("Quoted bid around fair value %s inventory skew.", signed(-inventorySkew)), engine.SubmitRequest{Participant: bot.ID, Side: engine.Buy, Type: engine.Limit, Price: bid, Quantity: size})
-	_, askErr := s.submit("BOT", fmt.Sprintf("Quoted ask around fair value %s inventory skew.", signed(-inventorySkew)), engine.SubmitRequest{Participant: bot.ID, Side: engine.Sell, Type: engine.Limit, Price: ask, Quantity: size})
+	facts := map[string]int64{"fairValue": fair, "inventory": a.SharesAvailable + a.SharesReserved, "inventorySkew": inventorySkew, "spread": spread, "quantity": size}
+	_, bidErr := s.submitWithFacts("BOT", fmt.Sprintf("Quoted bid around fair value %s inventory skew.", signed(-inventorySkew)), facts, engine.SubmitRequest{Participant: bot.ID, Side: engine.Buy, Type: engine.Limit, Price: bid, Quantity: size})
+	_, askErr := s.submitWithFacts("BOT", fmt.Sprintf("Quoted ask around fair value %s inventory skew.", signed(-inventorySkew)), facts, engine.SubmitRequest{Participant: bot.ID, Side: engine.Sell, Type: engine.Limit, Price: ask, Quantity: size})
 	if bidErr != nil || askErr != nil {
 		bot.Status = "Risk capped"
 		bot.LastAction = "Quote skipped: balance or inventory risk limit reached."
@@ -363,7 +380,14 @@ func (s *Simulation) runMomentum(bot *Bot) {
 	if change < 0 {
 		side = engine.Sell
 	}
-	_, err := s.submit("BOT", fmt.Sprintf("Followed %d¢ executed-price trend over %d trades.", change, bot.Params.Lookback), engine.SubmitRequest{Participant: bot.ID, Side: side, Type: engine.Market, Quantity: bot.Params.Size})
+	size, inventory, lower, upper := s.riskBoundedSize(bot, side)
+	if size == 0 {
+		bot.Status = "Risk capped"
+		bot.LastAction = fmt.Sprintf("No order: inventory %d is at the strategy range %d–%d.", inventory, lower, upper)
+		return
+	}
+	reason := fmt.Sprintf("Followed %d¢ executed-price trend over %d trades; inventory %d, risk range %d–%d, submitted size %d.", change, bot.Params.Lookback, inventory, lower, upper, size)
+	_, err := s.submitWithFacts("BOT", reason, map[string]int64{"priceChange": change, "lookback": int64(bot.Params.Lookback), "inventory": inventory, "riskLower": lower, "riskUpper": upper, "quantity": size}, engine.SubmitRequest{Participant: bot.ID, Side: side, Type: engine.Market, Quantity: size})
 	if err != nil {
 		bot.Status, bot.LastAction = "Risk capped", "Order rejected: available balance risk limit."
 	} else {
@@ -383,12 +407,46 @@ func (s *Simulation) runMeanReversion(bot *Bot) {
 	if deviation < 0 {
 		side = engine.Buy
 	}
-	_, err := s.submit("BOT", fmt.Sprintf("Traded against %d¢ deviation from estimated fair value.", deviation), engine.SubmitRequest{Participant: bot.ID, Side: side, Type: engine.Market, Quantity: bot.Params.Size})
+	size, inventory, lower, upper := s.riskBoundedSize(bot, side)
+	if size == 0 {
+		bot.Status = "Risk capped"
+		bot.LastAction = fmt.Sprintf("No order: inventory %d is at the strategy range %d–%d.", inventory, lower, upper)
+		return
+	}
+	reason := fmt.Sprintf("Traded against %d¢ deviation from estimated fair value; inventory %d, risk range %d–%d, submitted size %d.", deviation, inventory, lower, upper, size)
+	_, err := s.submitWithFacts("BOT", reason, map[string]int64{"deviation": deviation, "fairValue": fair, "lastPrice": last, "inventory": inventory, "riskLower": lower, "riskUpper": upper, "quantity": size}, engine.SubmitRequest{Participant: bot.ID, Side: side, Type: engine.Market, Quantity: size})
 	if err != nil {
 		bot.Status, bot.LastAction = "Risk capped", "Order rejected: strategy risk limit reached."
 	} else {
 		bot.Status, bot.LastAction = "Active", fmt.Sprintf("Submitted %s order against %d¢ deviation.", strings.ToLower(string(side)), deviation)
 	}
+}
+
+func (s *Simulation) riskBoundedSize(bot *Bot, side engine.Side) (size, inventory, lower, upper int64) {
+	account, ok := s.Engine.Account(bot.ID)
+	if !ok {
+		return 0, 0, 0, 0
+	}
+	inventory = account.SharesAvailable + account.SharesReserved
+	initial := inventory
+	for _, endowment := range s.Endowments {
+		if endowment.Participant == bot.ID {
+			initial = endowment.Shares
+			break
+		}
+	}
+	lower = max(0, initial-bot.Params.RiskLimit)
+	upper = initial + bot.Params.RiskLimit
+	size = bot.Params.Size
+	if bot.Params.RiskLimit <= 0 {
+		return 0, inventory, initial, initial
+	}
+	if side == engine.Buy {
+		size = min(size, max(0, upper-inventory))
+	} else {
+		size = min(size, max(0, inventory-lower))
+	}
+	return size, inventory, lower, upper
 }
 
 func (s *Simulation) applyScheduled() {
@@ -414,11 +472,14 @@ func (s *Simulation) TriggerScenario(name string) error {
 		s.StressUntil = max(s.StressUntil, s.LogicalTime+duration)
 		s.Scheduled = append(s.Scheduled, Scheduled{At: s.LogicalTime + duration, Scenario: name})
 		s.record(RecordedEvent{Kind: "SCENARIO", Origin: "MANUAL", Scenario: name, Duration: duration, Reason: "Simulator event: bot fair-value estimates fell $8.00 and stress spreads widened."})
+		sequence := s.EventSeq
 		r, err := s.submit("SCENARIO", "Negative-news fund sold through available bids.", engine.SubmitRequest{Participant: "scenario-fund", Side: engine.Sell, Type: engine.Market, Quantity: 180})
-		marker := ScenarioMarker{LogicalTime: s.LogicalTime, Type: name, Title: "Negative news", Explanation: "Simulator event: fair-value estimates fell, makers widened quotes, and a funded participant submitted an actual sell order."}
+		marker := ScenarioMarker{Sequence: sequence, LogicalTime: s.LogicalTime, Type: name, Title: "Negative news", Explanation: "Simulator event: fair-value estimates fell, makers widened quotes, and a funded participant submitted an actual sell order."}
 		if err == nil {
 			marker.OrderIDs = []uint64{r.Order.ID}
-			for _, trade := range r.Trades { marker.TradeIDs = append(marker.TradeIDs, trade.ID) }
+			for _, trade := range r.Trades {
+				marker.TradeIDs = append(marker.TradeIDs, trade.ID)
+			}
 		}
 		s.Markers = append(s.Markers, marker)
 	case "liquidity-drought":
@@ -426,18 +487,31 @@ func (s *Simulation) TriggerScenario(name string) error {
 		s.DroughtUntil = max(s.DroughtUntil, s.LogicalTime+duration)
 		s.Scheduled = append(s.Scheduled, Scheduled{At: s.LogicalTime + duration, Scenario: name})
 		s.record(RecordedEvent{Kind: "SCENARIO", Origin: "MANUAL", Scenario: name, Duration: duration, Reason: "Simulator event: market makers withdrew quotes for 20 seconds."})
-		for i := range s.Bots { if s.Bots[i].Strategy == "Market maker" { s.runMarketMaker(&s.Bots[i]) } }
-		s.Markers = append(s.Markers, ScenarioMarker{LogicalTime: s.LogicalTime, Type: name, Title: "Liquidity drought", Explanation: "Simulator event: market makers canceled quotes and temporarily stopped participating."})
+		sequence := s.EventSeq
+		for i := range s.Bots {
+			if s.Bots[i].Strategy == "Market maker" {
+				s.runMarketMaker(&s.Bots[i])
+			}
+		}
+		s.Markers = append(s.Markers, ScenarioMarker{Sequence: sequence, LogicalTime: s.LogicalTime, Type: name, Title: "Liquidity drought", Explanation: "Simulator event: market makers canceled quotes and temporarily stopped participating."})
 	case "large-sell":
 		s.record(RecordedEvent{Kind: "SCENARIO", Origin: "MANUAL", Scenario: name, Reason: "Simulator event: a funded participant submitted a 600-share market sell."})
+		sequence := s.EventSeq
 		r, err := s.submit("SCENARIO", "Large funded sell executed against real resting liquidity.", engine.SubmitRequest{Participant: "scenario-fund", Side: engine.Sell, Type: engine.Market, Quantity: 600})
-		marker := ScenarioMarker{LogicalTime: s.LogicalTime, Type: name, Title: "Large sell order", Explanation: "Simulator event: a funded participant submitted an actual market sell; any move came from book liquidity."}
-		if err == nil { marker.OrderIDs = []uint64{r.Order.ID}; for _, trade := range r.Trades { marker.TradeIDs = append(marker.TradeIDs, trade.ID) } }
+		marker := ScenarioMarker{Sequence: sequence, LogicalTime: s.LogicalTime, Type: name, Title: "Large sell order", Explanation: "Simulator event: a funded participant submitted an actual market sell; any move came from book liquidity."}
+		if err == nil {
+			marker.OrderIDs = []uint64{r.Order.ID}
+			for _, trade := range r.Trades {
+				marker.TradeIDs = append(marker.TradeIDs, trade.ID)
+			}
+		}
 		s.Markers = append(s.Markers, marker)
 	default:
 		return fmt.Errorf("unknown scenario %q", name)
 	}
-	if len(s.Markers) > 200 { s.Markers = s.Markers[len(s.Markers)-200:] }
+	if len(s.Markers) > 200 {
+		s.Markers = s.Markers[len(s.Markers)-200:]
+	}
 	return nil
 }
 
@@ -449,7 +523,9 @@ func (s *Simulation) applyScenarioReversal(name string, record bool) {
 	case "liquidity-drought":
 		s.DroughtUntil = s.LogicalTime
 	}
-	if record { s.record(RecordedEvent{Kind: "SCENARIO_END", Origin: "SCHEDULER", Scenario: name, Reason: "Scheduled scenario duration ended."}) }
+	if record {
+		s.record(RecordedEvent{Kind: "SCENARIO_END", Origin: "SCHEDULER", Scenario: name, Reason: "Scheduled scenario duration ended."})
+	}
 }
 
 func (s *Simulation) consumeTrades(at int64) {
@@ -465,27 +541,51 @@ func (s *Simulation) consumeTrades(at int64) {
 		}
 		s.ProcessedTrades++
 	}
-	if len(s.Candles) > 500 { s.Candles = s.Candles[len(s.Candles)-500:] }
+	if len(s.Candles) > 500 {
+		s.Candles = s.Candles[len(s.Candles)-500:]
+	}
 }
 
 func (s *Simulation) SetStrategy(strategy string, enabled bool, params *StrategyParams) error {
-	if s.Mode != "LIVE" { return errors.New("strategies are read-only during replay") }
+	if s.Mode != "LIVE" {
+		return errors.New("strategies are read-only during replay")
+	}
+	if params != nil {
+		if params.Size <= 0 || params.Size > 1_000 || params.Interval < 250 || params.Interval > 60_000 || params.Spread < 0 || params.Spread > engine.MaxPrice || params.Lookback < 0 || params.Lookback > 1_000 || params.Threshold < 0 || params.Threshold > engine.MaxPrice || params.RiskLimit < 0 || params.RiskLimit > engine.MaxQuantity {
+			return errors.New("strategy parameters out of bounds")
+		}
+	}
 	found := false
+	var changes []RecordedStrategyChange
 	for i := range s.Bots {
 		if strings.EqualFold(s.Bots[i].Strategy, strategy) {
 			found = true
 			s.Bots[i].Params.Enabled = enabled
 			if params != nil {
-				if params.Size <= 0 || params.Size > 1_000 || params.Interval < 250 || params.Interval > 60_000 { return errors.New("strategy parameters out of bounds") }
 				s.Bots[i].Params.Size, s.Bots[i].Params.Interval = params.Size, params.Interval
-				if params.Spread > 0 { s.Bots[i].Params.Spread = params.Spread }
-				if params.Threshold > 0 { s.Bots[i].Params.Threshold = params.Threshold }
+				if params.Spread > 0 {
+					s.Bots[i].Params.Spread = params.Spread
+				}
+				if params.Threshold > 0 {
+					s.Bots[i].Params.Threshold = params.Threshold
+				}
+				if params.Lookback > 0 {
+					s.Bots[i].Params.Lookback = params.Lookback
+				}
+				if params.RiskLimit > 0 {
+					s.Bots[i].Params.RiskLimit = params.RiskLimit
+				}
 			}
-			if !enabled { s.Bots[i].Status, s.Bots[i].LastAction = "Disabled", "Strategy disabled by operator." }
+			if !enabled {
+				s.Bots[i].Status, s.Bots[i].LastAction = "Disabled", "Strategy disabled by operator."
+			}
+			changes = append(changes, RecordedStrategyChange{BotID: s.Bots[i].ID, Params: s.Bots[i].Params})
 		}
 	}
-	if !found { return fmt.Errorf("unknown strategy %q", strategy) }
-	s.record(RecordedEvent{Kind: "STRATEGY", Origin: "MANUAL", Reason: fmt.Sprintf("%s enabled=%t", strategy, enabled)})
+	if !found {
+		return fmt.Errorf("unknown strategy %q", strategy)
+	}
+	s.record(RecordedEvent{Kind: "STRATEGY", Origin: "MANUAL", Reason: fmt.Sprintf("%s enabled=%t", strategy, enabled), StrategyChanges: changes})
 	return nil
 }
 
@@ -496,59 +596,179 @@ func (s *Simulation) Export() Experiment {
 func Import(id string, r io.Reader) (*Simulation, error) {
 	limited := io.LimitReader(r, MaxImportBytes+1)
 	b, err := io.ReadAll(limited)
-	if err != nil { return nil, err }
-	if len(b) > MaxImportBytes { return nil, fmt.Errorf("experiment exceeds %d byte limit", MaxImportBytes) }
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxImportBytes {
+		return nil, fmt.Errorf("experiment exceeds %d byte limit", MaxImportBytes)
+	}
 	var exp Experiment
-	if err := json.Unmarshal(b, &exp); err != nil { return nil, fmt.Errorf("invalid experiment JSON: %w", err) }
-	if exp.FormatVersion != FormatVersion || exp.EngineVersion != EngineVersion { return nil, fmt.Errorf("unsupported experiment version %d/%s", exp.FormatVersion, exp.EngineVersion) }
-	if len(exp.Events) > MaxEvents || exp.Config.InitialPrice <= 0 || exp.Config.InitialPrice > engine.MaxPrice || exp.Config.StepMillis < 10 || exp.Config.StepMillis > 60_000 { return nil, errors.New("experiment configuration or event count out of bounds") }
-	if len(exp.Endowments) == 0 || len(exp.Endowments) > 100 { return nil, errors.New("invalid experiment endowments") }
+	decoder := json.NewDecoder(strings.NewReader(string(b)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&exp); err != nil {
+		return nil, fmt.Errorf("invalid experiment JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("experiment contains trailing JSON data")
+	}
+	if exp.FormatVersion != FormatVersion || exp.EngineVersion != EngineVersion {
+		return nil, fmt.Errorf("unsupported experiment version %d/%s", exp.FormatVersion, exp.EngineVersion)
+	}
+	if len(exp.Events) > MaxEvents || exp.Config.InitialPrice <= 0 || exp.Config.InitialPrice > engine.MaxPrice || exp.Config.StepMillis < 10 || exp.Config.StepMillis > 60_000 || exp.Config.MaxEvents < 1 || exp.Config.MaxEvents > MaxEvents {
+		return nil, errors.New("experiment configuration or event count out of bounds")
+	}
+	if len(exp.Endowments) == 0 || len(exp.Endowments) > 100 {
+		return nil, errors.New("invalid experiment endowments")
+	}
+	for _, endowment := range exp.Endowments {
+		if endowment.Participant == "" || len(endowment.Participant) > 128 || endowment.Cash < 0 || endowment.Cash > 1_000_000_000_000_000 || endowment.Shares < 0 || endowment.Shares > 1_000_000_000_000_000 {
+			return nil, errors.New("experiment endowment field out of bounds")
+		}
+	}
+	if err := validateRecordedEvents(exp.Events); err != nil {
+		return nil, err
+	}
 	s, err := newSimulation(id, exp.Seed, exp.Config, exp.Endowments)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	s.ReplaySource = append([]RecordedEvent(nil), exp.Events...)
 	s.Mode, s.Running = "REPLAY", false
 	return s, nil
 }
 
+func validateRecordedEvents(events []RecordedEvent) error {
+	var sequence uint64
+	var logicalTime int64
+	for i, event := range events {
+		if event.Sequence <= sequence || event.Sequence > 10_000_000 || event.LogicalTime < logicalTime || event.LogicalTime > 1_000_000_000_000 {
+			return fmt.Errorf("event %d sequence or logical time is not ordered or is out of bounds", i)
+		}
+		if len(event.Kind) > 32 || len(event.Origin) > 64 || len(event.Reason) > 2_048 || len(event.Error) > 2_048 || len(event.Participant) > 128 || len(event.Scenario) > 64 || len(event.ReasonFacts) > 32 || len(event.OrderIDs) > 1_000 || len(event.TradeIDs) > 1_000 {
+			return fmt.Errorf("event %d contains an oversized field", i)
+		}
+		if event.Duration < 0 || event.Duration > 1_000_000_000 || event.OrderID > 10_000_000 {
+			return fmt.Errorf("event %d numeric field is out of bounds", i)
+		}
+		switch event.Kind {
+		case "ORDER":
+			if event.Request == nil {
+				return fmt.Errorf("event %d order is missing request", i)
+			}
+			request := event.Request
+			if len(request.Participant) == 0 || len(request.Participant) > 128 || len(request.Side) > 16 || len(request.Type) > 16 || request.Price < -engine.MaxPrice || request.Price > engine.MaxPrice || request.Quantity < -engine.MaxQuantity || request.Quantity > engine.MaxQuantity {
+				return fmt.Errorf("event %d order field is out of bounds", i)
+			}
+		case "CANCEL":
+			if event.Participant == "" {
+				return fmt.Errorf("event %d cancel is missing participant", i)
+			}
+		case "SCENARIO", "SCENARIO_END":
+			if event.Scenario != "negative-news" && event.Scenario != "liquidity-drought" && event.Scenario != "large-sell" {
+				return fmt.Errorf("event %d has unknown scenario %q", i, event.Scenario)
+			}
+		case "STRATEGY":
+			if len(event.StrategyChanges) == 0 || len(event.StrategyChanges) > 100 {
+				return fmt.Errorf("event %d strategy configuration is missing or oversized", i)
+			}
+			for _, change := range event.StrategyChanges {
+				params := change.Params
+				if change.BotID == "" || len(change.BotID) > 128 || params.Size < 1 || params.Size > 1_000 || params.Interval < 250 || params.Interval > 60_000 || params.Spread < 0 || params.Spread > engine.MaxPrice || params.Lookback < 0 || params.Lookback > 1_000 || params.Threshold < 0 || params.Threshold > engine.MaxPrice || params.RiskLimit < 0 || params.RiskLimit > engine.MaxQuantity {
+					return fmt.Errorf("event %d strategy field is out of bounds", i)
+				}
+			}
+		default:
+			return fmt.Errorf("event %d has unknown kind %q", i, event.Kind)
+		}
+		sequence, logicalTime = event.Sequence, event.LogicalTime
+	}
+	return nil
+}
+
 func (s *Simulation) EnterReplay() error {
-	if len(s.Events) == 0 { return errors.New("nothing has been recorded yet") }
+	if len(s.Events) == 0 {
+		return errors.New("nothing has been recorded yet")
+	}
 	s.ReplaySource = append([]RecordedEvent(nil), s.Events...)
 	return s.SeekReplay(0)
 }
 
 func (s *Simulation) SeekReplay(index int) error {
-	if index < 0 || index > len(s.ReplaySource) { return errors.New("replay index out of range") }
-	e, err := engine.New(s.Endowments)
-	if err != nil { return err }
-	s.Engine, s.Mode, s.Running, s.LogicalTime, s.ReplayIndex = e, "REPLAY", false, 0, 0
-	s.Candles, s.Markers, s.Scheduled, s.ProcessedTrades = nil, nil, nil, 0
-	s.FairShift, s.StressUntil, s.DroughtUntil = 0, 0, 0
-	for s.ReplayIndex < index { if err := s.StepReplay(); err != nil { return err } }
+	if index < 0 || index > len(s.ReplaySource) {
+		return errors.New("replay index out of range")
+	}
+	fresh, err := newSimulation(s.ID, s.Seed, s.Config, s.Endowments)
+	if err != nil {
+		return err
+	}
+	replaySource := append([]RecordedEvent(nil), s.ReplaySource...)
+	fresh.ReplaySource = replaySource
+	fresh.Mode = "REPLAY"
+	*s = *fresh
+	for s.ReplayIndex < index {
+		if err := s.StepReplay(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (s *Simulation) StepReplay() error {
-	if s.Mode != "REPLAY" { return errors.New("not in replay mode") }
-	if s.ReplayIndex >= len(s.ReplaySource) { s.Running = false; return nil }
+	if s.Mode != "REPLAY" {
+		return errors.New("not in replay mode")
+	}
+	if s.ReplayIndex >= len(s.ReplaySource) {
+		s.Running = false
+		return nil
+	}
 	event := s.ReplaySource[s.ReplayIndex]
 	s.LogicalTime = event.LogicalTime
 	switch event.Kind {
 	case "ORDER":
-		if event.Request == nil { return errors.New("recorded order is missing request") }
+		if event.Request == nil {
+			return errors.New("recorded order is missing request")
+		}
 		_, err := s.Engine.Submit(*event.Request)
-		if event.Error == "" && err != nil { return fmt.Errorf("replay diverged at event %d: %w", event.Sequence, err) }
+		if (event.Error == "") != (err == nil) {
+			return fmt.Errorf("replay acceptance diverged at event %d: recorded error %q, replay error %v", event.Sequence, event.Error, err)
+		}
 		s.consumeTrades(event.LogicalTime)
 	case "CANCEL":
 		_, err := s.Engine.Cancel(event.Participant, event.OrderID)
-		if event.Error == "" && err != nil { return fmt.Errorf("replay diverged at event %d: %w", event.Sequence, err) }
+		if (event.Error == "") != (err == nil) {
+			return fmt.Errorf("replay acceptance diverged at event %d: recorded error %q, replay error %v", event.Sequence, event.Error, err)
+		}
 	case "SCENARIO":
 		switch event.Scenario {
-		case "negative-news": s.FairShift -= 800; s.StressUntil = event.LogicalTime + event.Duration
-		case "liquidity-drought": s.DroughtUntil = event.LogicalTime + event.Duration
+		case "negative-news":
+			s.FairShift -= 800
+			s.StressUntil = event.LogicalTime + event.Duration
+		case "liquidity-drought":
+			s.DroughtUntil = event.LogicalTime + event.Duration
 		}
 		s.Markers = append(s.Markers, ScenarioMarker{Sequence: event.Sequence, LogicalTime: event.LogicalTime, Type: event.Scenario, Title: strings.ReplaceAll(event.Scenario, "-", " "), Explanation: event.Reason})
 	case "SCENARIO_END":
 		s.applyScenarioReversal(event.Scenario, false)
+	case "STRATEGY":
+		if len(event.StrategyChanges) == 0 {
+			return fmt.Errorf("recorded strategy event %d is missing configuration", event.Sequence)
+		}
+		for _, change := range event.StrategyChanges {
+			found := false
+			for i := range s.Bots {
+				if s.Bots[i].ID == change.BotID {
+					s.Bots[i].Params = change.Params
+					if !change.Params.Enabled {
+						s.Bots[i].Status, s.Bots[i].LastAction = "Disabled", "Strategy disabled by operator."
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("recorded strategy event %d references unknown bot %q", event.Sequence, change.BotID)
+			}
+		}
 	}
 	s.ReplayIndex++
 	return nil
@@ -556,28 +776,48 @@ func (s *Simulation) StepReplay() error {
 
 func (s *Simulation) lastPrice() (int64, string) {
 	trades := s.Engine.Snapshot().Trades
-	if len(trades) == 0 { return s.Config.InitialPrice, "Initial reference (no trades yet)" }
+	if len(trades) == 0 {
+		return s.Config.InitialPrice, "Initial reference (no trades yet)"
+	}
 	return trades[len(trades)-1].Price, "Last executed trade"
 }
 
 func (s *Simulation) Snapshot() Snapshot {
 	es := s.Engine.Snapshot()
 	last, source := s.lastPrice()
-	view := Snapshot{SessionID: s.ID, Seq: es.Sequence, Mode: s.Mode, Running: s.Running, Speed: s.Speed, LogicalTime: s.LogicalTime, Seed: s.Seed, Symbol: engine.Symbol, Trades: es.Trades, Candles: append([]Candle(nil), s.Candles...), Events: append([]ScenarioMarker(nil), s.Markers...), Strategies: map[string]StrategyParams{}, Message: s.Message}
+	view := Snapshot{SessionID: s.ID, Seq: es.Sequence, Mode: s.Mode, Running: s.Running, Speed: s.Speed, LogicalTime: s.LogicalTime, Seed: s.Seed, Symbol: engine.Symbol, Trades: es.Trades, Candles: append([]Candle(nil), s.Candles...), Accounts: es.Accounts, Orders: es.Orders, Events: append([]ScenarioMarker(nil), s.Markers...), Strategies: map[string]StrategyParams{}, Config: s.Config, Message: s.Message}
 	view.Book.Bids, view.Book.Asks = es.Bids, es.Asks
 	view.Market = MarketView{LastPrice: last, ReferencePrice: s.Config.InitialPrice, RunChange: last - s.Config.InitialPrice, Volume: 0, MarkSource: source}
-	for _, t := range es.Trades { view.Market.Volume += t.Quantity }
-	if len(es.Bids) > 0 { view.Market.BestBid = es.Bids[0].Price }
-	if len(es.Asks) > 0 { view.Market.BestAsk = es.Asks[0].Price }
-	if view.Market.BestBid > 0 && view.Market.BestAsk > 0 { view.Market.Spread = view.Market.BestAsk - view.Market.BestBid }
+	for _, t := range es.Trades {
+		view.Market.Volume += t.Quantity
+	}
+	if len(es.Bids) > 0 {
+		view.Market.BestBid = es.Bids[0].Price
+	}
+	if len(es.Asks) > 0 {
+		view.Market.BestAsk = es.Asks[0].Price
+	}
+	if view.Market.BestBid > 0 && view.Market.BestAsk > 0 {
+		view.Market.Spread = view.Market.BestAsk - view.Market.BestBid
+	}
 	for _, a := range es.Accounts {
-		if a.Participant != HumanParticipant { continue }
+		if a.Participant != HumanParticipant {
+			continue
+		}
 		view.Account.Account = a
 		view.Account.Equity = a.CashAvailable + a.CashReserved + (a.SharesAvailable+a.SharesReserved)*last
 		view.Account.PnL = view.Account.Equity - 10_000_000 - 1_000*s.Config.InitialPrice
 	}
-	for _, o := range es.Orders { if o.Participant == HumanParticipant && (o.Status == engine.Open || o.Status == engine.Partially) { view.Account.OpenOrders = append(view.Account.OpenOrders, o) } }
-	for _, t := range es.Trades { if t.Buyer == HumanParticipant || t.Seller == HumanParticipant { view.Account.TradeHistory = append(view.Account.TradeHistory, t) } }
+	for _, o := range es.Orders {
+		if o.Participant == HumanParticipant && (o.Status == engine.Open || o.Status == engine.Partially) {
+			view.Account.OpenOrders = append(view.Account.OpenOrders, o)
+		}
+	}
+	for _, t := range es.Trades {
+		if t.Buyer == HumanParticipant || t.Seller == HumanParticipant {
+			view.Account.TradeHistory = append(view.Account.TradeHistory, t)
+		}
+	}
 	view.Bots = append([]Bot(nil), s.Bots...)
 	for i := range view.Bots {
 		a, _ := s.Engine.Account(view.Bots[i].ID)
@@ -585,19 +825,79 @@ func (s *Simulation) Snapshot() Snapshot {
 		view.Bots[i].Cash = a.CashAvailable + a.CashReserved
 		view.Bots[i].Equity = view.Bots[i].Cash + view.Bots[i].Inventory*last
 		initialCash, initialShares := int64(0), int64(0)
-		for _, x := range s.Endowments { if x.Participant == view.Bots[i].ID { initialCash, initialShares = x.Cash, x.Shares } }
+		for _, x := range s.Endowments {
+			if x.Participant == view.Bots[i].ID {
+				initialCash, initialShares = x.Cash, x.Shares
+			}
+		}
 		view.Bots[i].PnL = view.Bots[i].Equity - initialCash - initialShares*s.Config.InitialPrice
 		view.Strategies[view.Bots[i].Strategy] = view.Bots[i].Params
 	}
 	sort.Slice(view.Bots, func(i, j int) bool { return view.Bots[i].ID < view.Bots[j].ID })
 	count := len(s.Events)
-	if s.Mode == "REPLAY" { count = len(s.ReplaySource) }
+	if s.Mode == "REPLAY" {
+		count = len(s.ReplaySource)
+	}
 	view.Recording = RecordingView{EventCount: count, ReplayIndex: s.ReplayIndex, MaxEvents: s.Config.MaxEvents, AtEnd: s.Mode == "REPLAY" && s.ReplayIndex >= count}
-	if len(view.Trades) > 200 { view.Trades = view.Trades[len(view.Trades)-200:] }
-	if len(view.Account.TradeHistory) > 200 { view.Account.TradeHistory = view.Account.TradeHistory[len(view.Account.TradeHistory)-200:] }
+	if len(view.Trades) > 200 {
+		view.Trades = view.Trades[len(view.Trades)-200:]
+	}
+	if len(view.Account.TradeHistory) > 200 {
+		view.Account.TradeHistory = view.Account.TradeHistory[len(view.Account.TradeHistory)-200:]
+	}
+	if len(view.Orders) > 500 {
+		view.Orders = view.Orders[len(view.Orders)-500:]
+	}
 	return view
 }
 
-func abs(v int64) int64 { if v < 0 { return -v }; return v }
-func min(a, b int64) int64 { if a < b { return a }; return b }
-func max(a, b int64) int64 { if a > b { return a }; return b }
+// CanonicalHash covers deterministic market and strategy state while excluding
+// transport telemetry such as mode, running state, playback speed, and messages.
+func (s *Simulation) CanonicalHash() (string, error) {
+	type canonicalBot struct {
+		ID       string
+		Strategy string
+		Bias     int64
+		Params   StrategyParams
+	}
+	bots := make([]canonicalBot, len(s.Bots))
+	for i, bot := range s.Bots {
+		bots[i] = canonicalBot{ID: bot.ID, Strategy: bot.Strategy, Bias: bot.Bias, Params: bot.Params}
+	}
+	state := struct {
+		Seed         int64
+		Config       Config
+		LogicalTime  int64
+		Engine       engine.Snapshot
+		Bots         []canonicalBot
+		Candles      []Candle
+		FairShift    int64
+		StressUntil  int64
+		DroughtUntil int64
+	}{s.Seed, s.Config, s.LogicalTime, s.Engine.Snapshot(), bots, s.Candles, s.FairShift, s.StressUntil, s.DroughtUntil}
+	b, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(b)
+	return hex.EncodeToString(hash[:]), nil
+}
+
+func abs(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}

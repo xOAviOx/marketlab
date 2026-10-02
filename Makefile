@@ -7,11 +7,11 @@ server:
 	go run ./cmd/marketlab
 
 web:
-	pnpm --dir web dev
+	npm --prefix web run dev
 
 test:
 	go test ./...
-	pnpm --dir web test -- --run
+	npm --prefix web test -- --run
 
 race:
 	go test -race ./...
@@ -21,4 +21,3 @@ benchmark:
 
 build:
 	sh scripts/build.sh
-

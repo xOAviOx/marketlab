@@ -597,6 +597,8 @@ func (e *Engine) CheckInvariants() error {
 	var totalCash, totalShares int64
 	reservedCash := make(map[string]int64, len(e.accounts))
 	reservedShares := make(map[string]int64, len(e.accounts))
+	fillQuantity := make(map[uint64]int64, len(e.orders))
+	usedSequence := make(map[uint64]string, len(e.orders)+len(e.trades))
 	for participant, account := range e.accounts {
 		if account == nil || participant == "" || account.Participant != participant {
 			return fmt.Errorf("invalid account entry %q", participant)
@@ -639,6 +641,13 @@ func (e *Engine) CheckInvariants() error {
 		if order.CommandID == 0 || order.CommandID >= e.nextCommandID || order.Sequence == 0 || order.Sequence > e.sequence {
 			return fmt.Errorf("invalid identifiers on order %d", id)
 		}
+		if id >= e.nextOrderID {
+			return fmt.Errorf("order id %d is not below next order id %d", id, e.nextOrderID)
+		}
+		if event, exists := usedSequence[order.Sequence]; exists {
+			return fmt.Errorf("sequence %d reused by order %d and %s", order.Sequence, id, event)
+		}
+		usedSequence[order.Sequence] = fmt.Sprintf("order %d", id)
 		if order.Participant == "" || e.accounts[order.Participant] == nil || order.Side != Buy && order.Side != Sell || order.Type != Limit && order.Type != Market {
 			return fmt.Errorf("invalid fields on order %d", id)
 		}
@@ -668,7 +677,11 @@ func (e *Engine) CheckInvariants() error {
 					return errors.New("reservation total overflow")
 				}
 			} else {
-				reservedShares[order.Participant] += order.Remaining
+				var ok bool
+				reservedShares[order.Participant], ok = addInt64(reservedShares[order.Participant], order.Remaining)
+				if !ok {
+					return errors.New("share reservation total overflow")
+				}
 			}
 		} else {
 			if bookCount[id] != 0 {
@@ -696,10 +709,17 @@ func (e *Engine) CheckInvariants() error {
 		if trade.ID != uint64(i+1) || trade.Sequence <= previousTradeSequence || trade.Sequence > e.sequence || trade.Quantity <= 0 || trade.Price <= 0 || trade.Price > MaxPrice {
 			return fmt.Errorf("invalid trade %d", trade.ID)
 		}
+		if event, exists := usedSequence[trade.Sequence]; exists {
+			return fmt.Errorf("sequence %d reused by trade %d and %s", trade.Sequence, trade.ID, event)
+		}
+		usedSequence[trade.Sequence] = fmt.Sprintf("trade %d", trade.ID)
 		buy := e.orders[trade.BuyOrderID]
 		sell := e.orders[trade.SellOrderID]
 		if buy == nil || sell == nil || buy.Side != Buy || sell.Side != Sell || buy.Participant != trade.Buyer || sell.Participant != trade.Seller || trade.Buyer == trade.Seller {
 			return fmt.Errorf("trade %d disagrees with its orders", trade.ID)
+		}
+		if trade.Sequence <= buy.Sequence || trade.Sequence <= sell.Sequence {
+			return fmt.Errorf("trade %d precedes one of its orders", trade.ID)
 		}
 		if trade.AggressorSide != Buy && trade.AggressorSide != Sell {
 			return fmt.Errorf("trade %d has invalid aggressor side", trade.ID)
@@ -711,7 +731,24 @@ func (e *Engine) CheckInvariants() error {
 		if maker.Price != trade.Price {
 			return fmt.Errorf("trade %d did not execute at resting price", trade.ID)
 		}
+		if buy.Type == Limit && trade.Price > buy.Price || sell.Type == Limit && trade.Price < sell.Price {
+			return fmt.Errorf("trade %d violates an order limit", trade.ID)
+		}
+		var ok bool
+		fillQuantity[buy.ID], ok = addInt64(fillQuantity[buy.ID], trade.Quantity)
+		if !ok {
+			return fmt.Errorf("buy fills overflow on order %d", buy.ID)
+		}
+		fillQuantity[sell.ID], ok = addInt64(fillQuantity[sell.ID], trade.Quantity)
+		if !ok {
+			return fmt.Errorf("sell fills overflow on order %d", sell.ID)
+		}
 		previousTradeSequence = trade.Sequence
+	}
+	for id, order := range e.orders {
+		if fillQuantity[id] != order.Filled {
+			return fmt.Errorf("fill ledger mismatch on order %d: trades %d/order %d", id, fillQuantity[id], order.Filled)
+		}
 	}
 	if uint64(len(e.trades))+1 != e.nextTradeID {
 		return fmt.Errorf("next trade id %d disagrees with trade count %d", e.nextTradeID, len(e.trades))
