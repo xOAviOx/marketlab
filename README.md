@@ -8,6 +8,19 @@ the exact command stream that produced the result.
 Everything in MarketLab is fictional. It has no broker connection, paid API,
 real market data, account system, or required AI service.
 
+## Explore the lab
+
+| Try | What it demonstrates |
+| --- | --- |
+| Start the simulation | Seeded bots create a live, deterministic NOVA market. |
+| Submit a limit or market order | Price-time-priority matching, reservations, fills, and portfolio updates. |
+| Trigger a scenario | News, liquidity, and large-order shocks affect orders—not prices directly. |
+| Enter replay | The exact recorded command stream rebuilds the experiment step by step. |
+
+For a quick first run, press **Start**, submit a small market order, trigger
+**Negative news**, then open **Pause & Replay Recording**. The status indicator
+should stay **CONNECTED** while the WebSocket feed is active.
+
 ## Run locally
 
 Requirements: Go 1.23 or newer, Node.js 22 or newer, and npm 10 or newer.

@@ -3,5 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  server: { proxy: { '/api': 'http://localhost:8080', '/ws': { target: 'ws://localhost:8080', ws: true, changeOrigin: true } } },
+  // Preserve the browser Host header on the WebSocket upgrade. The backend's
+  // same-origin check then accepts Vite's local proxy just like production.
+  server: { proxy: { '/api': 'http://localhost:8080', '/ws': { target: 'ws://localhost:8080', ws: true } } },
 })

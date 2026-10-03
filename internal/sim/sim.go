@@ -140,27 +140,30 @@ type RecordingView struct {
 }
 
 type Snapshot struct {
-	SessionID   string                              `json:"sessionId"`
-	Seq         uint64                              `json:"seq"`
-	Mode        string                              `json:"mode"`
-	Running     bool                                `json:"running"`
-	Speed       float64                             `json:"speed"`
-	LogicalTime int64                               `json:"logicalTime"`
-	Seed        int64                               `json:"seed"`
-	Symbol      string                              `json:"symbol"`
-	Market      MarketView                          `json:"market"`
-	Book        struct{ Bids, Asks []engine.Level } `json:"book"`
-	Trades      []engine.Trade                      `json:"trades"`
-	Candles     []Candle                            `json:"candles"`
-	Accounts    []engine.Account                    `json:"accounts"`
-	Orders      []engine.Order                      `json:"orders"`
-	Account     AccountView                         `json:"account"`
-	Bots        []Bot                               `json:"bots"`
-	Events      []ScenarioMarker                    `json:"events"`
-	Recording   RecordingView                       `json:"recording"`
-	Strategies  map[string]StrategyParams           `json:"strategies"`
-	Config      Config                              `json:"config"`
-	Message     string                              `json:"message,omitempty"`
+	SessionID   string     `json:"sessionId"`
+	Seq         uint64     `json:"seq"`
+	Mode        string     `json:"mode"`
+	Running     bool       `json:"running"`
+	Speed       float64    `json:"speed"`
+	LogicalTime int64      `json:"logicalTime"`
+	Seed        int64      `json:"seed"`
+	Symbol      string     `json:"symbol"`
+	Market      MarketView `json:"market"`
+	Book        struct {
+		Bids []engine.Level `json:"bids"`
+		Asks []engine.Level `json:"asks"`
+	} `json:"book"`
+	Trades     []engine.Trade            `json:"trades"`
+	Candles    []Candle                  `json:"candles"`
+	Accounts   []engine.Account          `json:"accounts"`
+	Orders     []engine.Order            `json:"orders"`
+	Account    AccountView               `json:"account"`
+	Bots       []Bot                     `json:"bots"`
+	Events     []ScenarioMarker          `json:"events"`
+	Recording  RecordingView             `json:"recording"`
+	Strategies map[string]StrategyParams `json:"strategies"`
+	Config     Config                    `json:"config"`
+	Message    string                    `json:"message,omitempty"`
 }
 
 type Simulation struct {
@@ -847,6 +850,38 @@ func (s *Simulation) Snapshot() Snapshot {
 	}
 	if len(view.Orders) > 500 {
 		view.Orders = view.Orders[len(view.Orders)-500:]
+	}
+	// The browser contract uses arrays rather than nullable collections. Keeping
+	// empty collections explicit also lets consumers safely render a new session.
+	if view.Book.Bids == nil {
+		view.Book.Bids = []engine.Level{}
+	}
+	if view.Book.Asks == nil {
+		view.Book.Asks = []engine.Level{}
+	}
+	if view.Trades == nil {
+		view.Trades = []engine.Trade{}
+	}
+	if view.Candles == nil {
+		view.Candles = []Candle{}
+	}
+	if view.Accounts == nil {
+		view.Accounts = []engine.Account{}
+	}
+	if view.Orders == nil {
+		view.Orders = []engine.Order{}
+	}
+	if view.Account.OpenOrders == nil {
+		view.Account.OpenOrders = []engine.Order{}
+	}
+	if view.Account.TradeHistory == nil {
+		view.Account.TradeHistory = []engine.Trade{}
+	}
+	if view.Bots == nil {
+		view.Bots = []Bot{}
+	}
+	if view.Events == nil {
+		view.Events = []ScenarioMarker{}
 	}
 	return view
 }

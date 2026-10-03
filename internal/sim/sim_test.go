@@ -32,6 +32,38 @@ func TestSeededSimulationDeterministic(t *testing.T) {
 	}
 }
 
+func TestSnapshotJSONUsesFrontendBookAndArrayContract(t *testing.T) {
+	s, err := New("snapshot", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(s.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	book := payload["book"].(map[string]any)
+	if _, ok := book["bids"].([]any); !ok {
+		t.Fatalf("book bids must be an array: %s", body)
+	}
+	if _, ok := book["asks"].([]any); !ok {
+		t.Fatalf("book asks must be an array: %s", body)
+	}
+	if _, ok := payload["events"].([]any); !ok {
+		t.Fatalf("events must be an array: %s", body)
+	}
+	account := payload["account"].(map[string]any)
+	if _, ok := account["openOrders"].([]any); !ok {
+		t.Fatalf("openOrders must be an array: %s", body)
+	}
+	if _, ok := account["tradeHistory"].([]any); !ok {
+		t.Fatalf("tradeHistory must be an array: %s", body)
+	}
+}
+
 func TestScenariosUseOrdersAndReplayDeterministically(t *testing.T) {
 	s, _ := New("live", 424242)
 	for range 20 {

@@ -100,7 +100,6 @@ func TestReservationAndPriceImprovementRefund(t *testing.T) {
 		t.Fatalf("cash reserve after cancel = %d", a.CashReserved)
 	}
 }
-
 func TestInsufficientBalancesAndMarketRemainders(t *testing.T) {
 	e := testEngine(t)
 	if _, err := e.Submit(SubmitRequest{Participant: "buyer", Side: Buy, Type: Limit, Price: MaxPrice, Quantity: MaxQuantity}); !errors.Is(err, ErrInsufficientCash) {
@@ -119,7 +118,6 @@ func TestInsufficientBalancesAndMarketRemainders(t *testing.T) {
 		t.Fatalf("partial market result: %+v", partial)
 	}
 }
-
 func TestSelfTradePreventionCancelsIncoming(t *testing.T) {
 	e := testEngine(t)
 	submit(t, e, SubmitRequest{Participant: "buyer", Side: Sell, Type: Limit, Price: 10_000, Quantity: 2})
